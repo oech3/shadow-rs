@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# shadow-rs pre-push hook — runs full test suite on all three distros.
+# Install: ./hooks/install.sh
+#
+# Runs fmt, clippy, and tests on Debian, Alpine, and Fedora.
+# Takes ~30s on a warm Docker cache.
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+run_check() {
+    local distro=$1
+    shift
+    echo -e "${YELLOW}[$distro]${NC} $*"
+    if ! docker compose run --rm -T "$distro" "$@" 2>&1; then
+        echo -e "${RED}FAILED${NC} on $distro: $*"
+        exit 1
+    fi
+}
+
+echo "pre-push: full CI checks across all distros"
+echo "==========================================="
+
+# Format + clippy (Debian only — same Rust version everywhere)
+run_check debian cargo fmt --all --check
+run_check debian cargo clippy --workspace --all-targets -- -D warnings
+
+# Tests on all three distros
+run_check debian cargo test --workspace
+run_check alpine cargo test --workspace
+run_check fedora cargo test --workspace
+
+echo ""
+echo -e "${GREEN}pre-push: all checks passed on debian/alpine/fedora${NC}"

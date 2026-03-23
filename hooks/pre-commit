@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# shadow-rs pre-commit hook — runs fmt check and clippy in Docker.
+# Install: ./hooks/install.sh
+#
+# Fast checks only (no full test suite — that's pre-push).
+# Runs in ~5s on a warm Docker cache.
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+echo "pre-commit: checking formatting..."
+if ! docker compose run --rm -T debian cargo fmt --all --check 2>&1; then
+    echo -e "${RED}FAILED${NC}: cargo fmt --all --check"
+    echo "Run: docker compose run --rm debian cargo fmt --all"
+    exit 1
+fi
+
+echo "pre-commit: running clippy..."
+if ! docker compose run --rm -T debian cargo clippy --workspace --all-targets -- -D warnings 2>&1; then
+    echo -e "${RED}FAILED${NC}: cargo clippy"
+    exit 1
+fi
+
+echo -e "${GREEN}pre-commit: all checks passed${NC}"
