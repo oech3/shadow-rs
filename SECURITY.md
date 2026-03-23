@@ -19,7 +19,7 @@ reporting feature:
 2. Click "New draft security advisory"
 3. Fill in the details
 
-Or email the maintainers directly (add contact email when established).
+If private advisory reporting is unavailable, open an issue tagged `security`.
 
 ## What to Include
 

@@ -500,14 +500,18 @@ fn resolve_target_user(matches: &clap::ArgMatches) -> Result<String, PasswdError
     }
 }
 
-/// Check if the effective user is root.
+/// Check if the *real* user (caller) is root.
+///
+/// Uses `getuid()` (real UID), NOT `geteuid()` (effective UID).
+/// When passwd is installed setuid-root, euid is always 0 for all callers.
+/// The real UID tells us if the caller is actually root or a regular user.
 fn is_root() -> bool {
-    nix::unistd::geteuid().is_root()
+    nix::unistd::getuid().is_root()
 }
 
-/// Return the current user's username (from euid).
+/// Return the current user's username (from real UID).
 fn get_current_username() -> Result<String, PasswdError> {
-    let uid = nix::unistd::geteuid();
+    let uid = nix::unistd::getuid();
     match nix::unistd::User::from_uid(uid) {
         Ok(Some(user)) => Ok(user.name),
         Ok(None) => Err(PasswdError::UnexpectedFailure(format!(
