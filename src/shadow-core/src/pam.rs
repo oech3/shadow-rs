@@ -394,8 +394,9 @@ fn read_from_tty(message: &PamMessage, echo: bool) -> io::Result<String> {
     reader.read_line(&mut line)?;
 
     // Print a newline after hidden input so the cursor moves down.
+    // Best-effort — a cosmetic write failure shouldn't abort PAM auth.
     if !echo {
-        tty.write_all(b"\n")?;
+        let _ = tty.write_all(b"\n");
     }
 
     // Strip trailing newline.

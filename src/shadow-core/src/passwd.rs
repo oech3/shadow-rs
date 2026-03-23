@@ -116,9 +116,11 @@ pub fn read_passwd_file(path: &Path) -> Result<Vec<PasswdEntry>, ShadowError> {
 
     for line in reader.lines() {
         let line = line?;
-        if line.is_empty() || line.starts_with('#') {
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
+        // Parse the original untrimmed line to preserve field whitespace.
         entries.push(line.parse()?);
     }
 
