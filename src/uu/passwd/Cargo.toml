@@ -21,6 +21,10 @@ nix = { workspace = true }
 shadow-core = { workspace = true, features = ["shadow", "login-defs"] }
 thiserror = { workspace = true }
 
+[features]
+default = []
+pam = ["shadow-core/pam"]
+
 [dev-dependencies]
 tempfile = { workspace = true }
 

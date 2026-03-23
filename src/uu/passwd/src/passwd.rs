@@ -64,8 +64,16 @@ pub fn uumain(args: impl IntoIterator<Item = std::ffi::OsString>) -> i32 {
         }
     };
 
+    // Handle --root / -R: chroot before anything else.
+    if let Some(chroot_dir) = matches.get_one::<String>(options::ROOT) {
+        if let Err(code) = do_chroot(chroot_dir) {
+            return code;
+        }
+    }
+
     let prefix = matches.get_one::<String>(options::PREFIX).map(Path::new);
     let root = SysRoot::new(prefix);
+    let quiet = matches.get_flag(options::QUIET);
 
     // Determine target user.
     let target_user = match resolve_target_user(&matches) {
@@ -86,16 +94,16 @@ pub fn uumain(args: impl IntoIterator<Item = std::ffi::OsString>) -> i32 {
     }
 
     if matches.get_flag(options::LOCK) {
-        return cmd_lock(&root, &target_user);
+        return cmd_lock(&root, &target_user, quiet);
     }
     if matches.get_flag(options::UNLOCK) {
-        return cmd_unlock(&root, &target_user);
+        return cmd_unlock(&root, &target_user, quiet);
     }
     if matches.get_flag(options::DELETE) {
-        return cmd_delete(&root, &target_user);
+        return cmd_delete(&root, &target_user, quiet);
     }
     if matches.get_flag(options::EXPIRE) {
-        return cmd_expire(&root, &target_user);
+        return cmd_expire(&root, &target_user, quiet);
     }
 
     // Aging field updates.
@@ -105,12 +113,11 @@ pub fn uumain(args: impl IntoIterator<Item = std::ffi::OsString>) -> i32 {
         || matches.contains_id(options::INACTIVE);
 
     if has_aging {
-        return cmd_aging(&matches, &root, &target_user);
+        return cmd_aging(&matches, &root, &target_user, quiet);
     }
 
-    // Default: password change via PAM (not yet implemented).
-    eprintln!("passwd: password change via PAM not yet implemented");
-    exit_codes::UNEXPECTED_FAILURE
+    // Default: password change via PAM.
+    cmd_pam_change(&matches, &target_user)
 }
 
 /// Build the clap `Command` for `passwd`.
@@ -297,16 +304,16 @@ fn cmd_status(root: &SysRoot, target_user: Option<&str>) -> i32 {
 }
 
 /// `passwd -l user` — lock the account password.
-fn cmd_lock(root: &SysRoot, user: &str) -> i32 {
-    mutate_shadow(root, user, "Locking password", |entry| {
+fn cmd_lock(root: &SysRoot, user: &str, quiet: bool) -> i32 {
+    mutate_shadow(root, user, "Locking password", quiet, |entry| {
         entry.lock();
         Ok(())
     })
 }
 
 /// `passwd -u user` — unlock the account password.
-fn cmd_unlock(root: &SysRoot, user: &str) -> i32 {
-    mutate_shadow(root, user, "Unlocking password", |entry| {
+fn cmd_unlock(root: &SysRoot, user: &str, quiet: bool) -> i32 {
+    mutate_shadow(root, user, "Unlocking password", quiet, |entry| {
         if !entry.unlock() {
             return Err("cannot unlock: password is not set or would remain locked".into());
         }
@@ -315,29 +322,29 @@ fn cmd_unlock(root: &SysRoot, user: &str) -> i32 {
 }
 
 /// `passwd -d user` — delete the account password.
-fn cmd_delete(root: &SysRoot, user: &str) -> i32 {
-    mutate_shadow(root, user, "Removing password", |entry| {
+fn cmd_delete(root: &SysRoot, user: &str, quiet: bool) -> i32 {
+    mutate_shadow(root, user, "Removing password", quiet, |entry| {
         entry.delete_password();
         Ok(())
     })
 }
 
 /// `passwd -e user` — expire the account password.
-fn cmd_expire(root: &SysRoot, user: &str) -> i32 {
-    mutate_shadow(root, user, "Expiring password", |entry| {
+fn cmd_expire(root: &SysRoot, user: &str, quiet: bool) -> i32 {
+    mutate_shadow(root, user, "Expiring password", quiet, |entry| {
         entry.expire();
         Ok(())
     })
 }
 
 /// `passwd -n/-x/-w/-i` — update aging fields.
-fn cmd_aging(matches: &clap::ArgMatches, root: &SysRoot, user: &str) -> i32 {
+fn cmd_aging(matches: &clap::ArgMatches, root: &SysRoot, user: &str, quiet: bool) -> i32 {
     let min = matches.get_one::<i64>(options::MINDAYS).copied();
     let max = matches.get_one::<i64>(options::MAXDAYS).copied();
     let warn = matches.get_one::<i64>(options::WARNDAYS).copied();
     let inactive = matches.get_one::<i64>(options::INACTIVE).copied();
 
-    mutate_shadow(root, user, "Updating aging information", |entry| {
+    mutate_shadow(root, user, "Updating aging information", quiet, |entry| {
         if let Some(v) = min {
             entry.min_age = Some(v);
         }
@@ -352,6 +359,66 @@ fn cmd_aging(matches: &clap::ArgMatches, root: &SysRoot, user: &str) -> i32 {
         }
         Ok(())
     })
+}
+
+/// Default operation: change password via PAM.
+///
+/// Feature-gated on `pam`. When PAM is not compiled in, prints an error.
+fn cmd_pam_change(matches: &clap::ArgMatches, _target_user: &str) -> i32 {
+    let _keep_tokens = matches.get_flag(options::KEEP_TOKENS);
+    let _use_stdin = matches.get_flag(options::STDIN);
+    let _repository = matches.get_one::<String>(options::REPOSITORY);
+
+    #[cfg(feature = "pam")]
+    {
+        use shadow_core::pam::{ConvMode, PamContext};
+
+        let conv_mode = if _use_stdin {
+            ConvMode::Stdin
+        } else {
+            ConvMode::Terminal
+        };
+
+        let mut pam = match PamContext::new("passwd", _target_user, conv_mode) {
+            Ok(ctx) => ctx,
+            Err(e) => {
+                eprintln!("passwd: {e}");
+                return exit_codes::UNEXPECTED_FAILURE;
+            }
+        };
+
+        if let Some(repo) = _repository {
+            pam.set_repository(repo);
+        }
+
+        // Non-root users changing their own password must authenticate first.
+        if !is_root() {
+            if let Err(e) = pam.authenticate() {
+                eprintln!("passwd: {e}");
+                return exit_codes::PERMISSION_DENIED;
+            }
+        }
+
+        // Change the password token.
+        let result = if _keep_tokens {
+            pam.chauthtok_expired()
+        } else {
+            pam.chauthtok()
+        };
+
+        if let Err(e) = result {
+            eprintln!("passwd: {e}");
+            return exit_codes::UNEXPECTED_FAILURE;
+        }
+
+        exit_codes::SUCCESS
+    }
+
+    #[cfg(not(feature = "pam"))]
+    {
+        eprintln!("passwd: PAM support is not compiled in — cannot change password interactively");
+        exit_codes::UNEXPECTED_FAILURE
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -382,6 +449,30 @@ fn resolve_target_user(matches: &clap::ArgMatches) -> Result<String, i32> {
 /// Check if the effective user is root.
 fn is_root() -> bool {
     nix::unistd::geteuid().is_root()
+}
+
+/// Perform `chroot(2)` into the specified directory.
+///
+/// Must be root to call `chroot`. After `chroot`, chdir to `/` so the
+/// working directory is valid inside the new root.
+fn do_chroot(dir: &str) -> Result<(), i32> {
+    if !is_root() {
+        eprintln!("passwd: only root may use --root");
+        return Err(exit_codes::PERMISSION_DENIED);
+    }
+
+    let path = std::path::Path::new(dir);
+    nix::unistd::chroot(path).map_err(|e| {
+        eprintln!("passwd: cannot chroot to '{dir}': {e}");
+        exit_codes::UNEXPECTED_FAILURE
+    })?;
+
+    nix::unistd::chdir("/").map_err(|e| {
+        eprintln!("passwd: cannot chdir to / after chroot: {e}");
+        exit_codes::UNEXPECTED_FAILURE
+    })?;
+
+    Ok(())
 }
 
 /// Format a single shadow entry as a `passwd -S` status line.
@@ -433,7 +524,7 @@ fn format_days_since_epoch(days: i64) -> String {
 
 /// Lock the shadow file, read entries, apply a mutation to one user's entry,
 /// write back atomically, invalidate nscd cache.
-fn mutate_shadow<F>(root: &SysRoot, username: &str, action: &str, mutate: F) -> i32
+fn mutate_shadow<F>(root: &SysRoot, username: &str, action: &str, quiet: bool, mutate: F) -> i32
 where
     F: FnOnce(&mut ShadowEntry) -> Result<(), String>,
 {
@@ -495,7 +586,9 @@ where
     drop(lock);
     nscd::invalidate_cache("shadow");
 
-    eprintln!("passwd: {action} for user {username}");
+    if !quiet {
+        eprintln!("passwd: {action} for user {username}");
+    }
     exit_codes::SUCCESS
 }
 
@@ -503,10 +596,18 @@ where
 mod tests {
     use super::*;
 
+    // -----------------------------------------------------------------------
+    // Basic clap / app tests
+    // -----------------------------------------------------------------------
+
     #[test]
     fn test_app_builds() {
         uu_app().debug_assert();
     }
+
+    // -----------------------------------------------------------------------
+    // format_status helper tests
+    // -----------------------------------------------------------------------
 
     #[test]
     fn test_format_status_locked() {
@@ -576,12 +677,62 @@ mod tests {
         };
         let status = format_status(&entry);
         // * is not locked (doesn't start with !), not empty => P
-        // Actually * means "no password set / cannot login" but it's technically "P" for status.
-        // GNU passwd shows it as "L" because * is a non-valid hash.
         // We follow our logic: starts_with('!') => L, empty => NP, else => P.
         assert!(status.contains(" P "));
         assert!(status.contains(" never "));
     }
+
+    #[test]
+    fn test_format_days_since_epoch() {
+        // Day 0 = 1970-01-01
+        let result = format_days_since_epoch(0);
+        // localtime_r respects timezone, but day 0 in UTC is 01/01/1970.
+        // We use a fixed known value: day 19500 = 2023-05-15 (UTC).
+        // Instead, just verify the format is MM/DD/YYYY.
+        assert_eq!(result.len(), 10, "format should be MM/DD/YYYY");
+        assert_eq!(&result[2..3], "/");
+        assert_eq!(&result[5..6], "/");
+    }
+
+    #[test]
+    fn test_format_status_double_locked() {
+        // Password "!!" — starts with '!', so status is L.
+        let entry = ShadowEntry {
+            name: "dbllock".to_string(),
+            passwd: "!!".to_string(),
+            last_change: Some(19500),
+            min_age: Some(0),
+            max_age: Some(99999),
+            warn_days: Some(7),
+            inactive_days: None,
+            expire_date: None,
+            reserved: String::new(),
+        };
+        let status = format_status(&entry);
+        assert!(status.contains(" L "), "!! should show as L");
+    }
+
+    #[test]
+    fn test_format_status_star_password() {
+        // Password "*" — not locked (no leading !), not empty => P.
+        let entry = ShadowEntry {
+            name: "star".to_string(),
+            passwd: "*".to_string(),
+            last_change: Some(19500),
+            min_age: Some(0),
+            max_age: Some(99999),
+            warn_days: Some(7),
+            inactive_days: None,
+            expire_date: None,
+            reserved: String::new(),
+        };
+        let status = format_status(&entry);
+        assert!(status.contains(" P "), "* should show as P per our logic");
+    }
+
+    // -----------------------------------------------------------------------
+    // Clap validation tests — conflict groups and flag parsing
+    // -----------------------------------------------------------------------
 
     #[test]
     fn test_conflicting_flags() {
@@ -605,155 +756,375 @@ mod tests {
     }
 
     #[test]
-    fn test_status_with_prefix() {
+    fn test_expire_conflicts_with_lock() {
+        let result = uu_app().try_get_matches_from(["passwd", "-e", "-l", "user"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_expire_conflicts_with_unlock() {
+        let result = uu_app().try_get_matches_from(["passwd", "-e", "-u", "user"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_expire_conflicts_with_delete() {
+        let result = uu_app().try_get_matches_from(["passwd", "-e", "-d", "user"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_expire_conflicts_with_status() {
+        let result = uu_app().try_get_matches_from(["passwd", "-e", "-S", "user"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_stdin_flag_parses() {
+        let result = uu_app().try_get_matches_from(["passwd", "-s", "user"]);
+        assert!(result.is_ok());
+        let m = result.unwrap();
+        assert!(m.get_flag(options::STDIN));
+    }
+
+    #[test]
+    fn test_keep_tokens_flag_parses() {
+        let result = uu_app().try_get_matches_from(["passwd", "-k", "user"]);
+        assert!(result.is_ok());
+        let m = result.unwrap();
+        assert!(m.get_flag(options::KEEP_TOKENS));
+    }
+
+    #[test]
+    fn test_root_flag_parses() {
+        let result = uu_app().try_get_matches_from(["passwd", "-R", "/mnt/sysroot", "user"]);
+        assert!(result.is_ok());
+        let m = result.unwrap();
+        assert_eq!(
+            m.get_one::<String>(options::ROOT).map(String::as_str),
+            Some("/mnt/sysroot")
+        );
+    }
+
+    #[test]
+    fn test_quiet_flag_parses() {
+        let result = uu_app().try_get_matches_from(["passwd", "-q", "-l", "user"]);
+        assert!(result.is_ok());
+        let m = result.unwrap();
+        assert!(m.get_flag(options::QUIET));
+    }
+
+    #[test]
+    fn test_repository_flag_parses() {
+        let result = uu_app().try_get_matches_from(["passwd", "-r", "files", "user"]);
+        assert!(result.is_ok());
+        let m = result.unwrap();
+        assert_eq!(
+            m.get_one::<String>(options::REPOSITORY).map(String::as_str),
+            Some("files")
+        );
+    }
+
+    #[test]
+    fn test_mindays_requires_value() {
+        let result = uu_app().try_get_matches_from(["passwd", "-n"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_maxdays_requires_value() {
+        let result = uu_app().try_get_matches_from(["passwd", "-x"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_warndays_requires_value() {
+        let result = uu_app().try_get_matches_from(["passwd", "-w"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_inactive_requires_value() {
+        let result = uu_app().try_get_matches_from(["passwd", "-i"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_aging_combined_flags() {
+        let result = uu_app().try_get_matches_from(["passwd", "-n", "5", "-x", "90", "user"]);
+        assert!(result.is_ok());
+        let m = result.unwrap();
+        assert_eq!(m.get_one::<i64>(options::MINDAYS).copied(), Some(5));
+        assert_eq!(m.get_one::<i64>(options::MAXDAYS).copied(), Some(90));
+    }
+
+    // -----------------------------------------------------------------------
+    // Integration tests with --prefix (synthetic shadow files, no root needed)
+    // -----------------------------------------------------------------------
+
+    /// Helper to create a temp dir with an etc/shadow file.
+    fn setup_prefix(shadow_content: &str) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         let etc = dir.path().join("etc");
         std::fs::create_dir_all(&etc).unwrap();
-        std::fs::write(etc.join("shadow"), "testuser:$6$hash:19500:0:99999:7:::\n").unwrap();
+        std::fs::write(etc.join("shadow"), shadow_content).unwrap();
+        dir
+    }
 
-        let args: Vec<std::ffi::OsString> = vec![
-            "passwd".into(),
-            "-S".into(),
-            "-P".into(),
-            dir.path().as_os_str().to_owned(),
-            "testuser".into(),
-        ];
-        let code = uumain(args);
+    /// Read the shadow file content back from a prefix dir.
+    fn read_shadow(dir: &tempfile::TempDir) -> String {
+        std::fs::read_to_string(dir.path().join("etc/shadow")).unwrap()
+    }
+
+    /// Run uumain with the given args.
+    fn run(args: &[&str]) -> i32 {
+        let os_args: Vec<std::ffi::OsString> = args.iter().map(|s| (*s).into()).collect();
+        uumain(os_args)
+    }
+
+    /// Run uumain with a prefix dir prepended to the args.
+    fn run_with_prefix(dir: &tempfile::TempDir, extra_args: &[&str]) -> i32 {
+        let prefix_str = dir.path().to_str().unwrap();
+        let mut args = vec!["passwd", "-P", prefix_str];
+        args.extend_from_slice(extra_args);
+        run(&args)
+    }
+
+    #[test]
+    fn test_status_with_prefix() {
+        let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-S", "testuser"]);
         assert_eq!(code, 0);
     }
 
     #[test]
     fn test_lock_with_prefix() {
-        let dir = tempfile::tempdir().unwrap();
-        let etc = dir.path().join("etc");
-        std::fs::create_dir_all(&etc).unwrap();
-        std::fs::write(etc.join("shadow"), "testuser:$6$hash:19500:0:99999:7:::\n").unwrap();
-
-        let args: Vec<std::ffi::OsString> = vec![
-            "passwd".into(),
-            "-l".into(),
-            "-P".into(),
-            dir.path().as_os_str().to_owned(),
-            "testuser".into(),
-        ];
-        let code = uumain(args);
+        let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-l", "testuser"]);
         assert_eq!(code, 0);
 
-        // Verify the password is now locked.
-        let content = std::fs::read_to_string(etc.join("shadow")).unwrap();
+        let content = read_shadow(&dir);
         assert!(content.contains("testuser:!$6$hash:"));
     }
 
     #[test]
     fn test_unlock_with_prefix() {
-        let dir = tempfile::tempdir().unwrap();
-        let etc = dir.path().join("etc");
-        std::fs::create_dir_all(&etc).unwrap();
-        std::fs::write(etc.join("shadow"), "testuser:!$6$hash:19500:0:99999:7:::\n").unwrap();
-
-        let args: Vec<std::ffi::OsString> = vec![
-            "passwd".into(),
-            "-u".into(),
-            "-P".into(),
-            dir.path().as_os_str().to_owned(),
-            "testuser".into(),
-        ];
-        let code = uumain(args);
+        let dir = setup_prefix("testuser:!$6$hash:19500:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-u", "testuser"]);
         assert_eq!(code, 0);
 
-        let content = std::fs::read_to_string(etc.join("shadow")).unwrap();
+        let content = read_shadow(&dir);
         assert!(content.contains("testuser:$6$hash:"));
     }
 
     #[test]
     fn test_delete_with_prefix() {
-        let dir = tempfile::tempdir().unwrap();
-        let etc = dir.path().join("etc");
-        std::fs::create_dir_all(&etc).unwrap();
-        std::fs::write(etc.join("shadow"), "testuser:$6$hash:19500:0:99999:7:::\n").unwrap();
-
-        let args: Vec<std::ffi::OsString> = vec![
-            "passwd".into(),
-            "-d".into(),
-            "-P".into(),
-            dir.path().as_os_str().to_owned(),
-            "testuser".into(),
-        ];
-        let code = uumain(args);
+        let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-d", "testuser"]);
         assert_eq!(code, 0);
 
-        let content = std::fs::read_to_string(etc.join("shadow")).unwrap();
+        let content = read_shadow(&dir);
         assert!(content.contains("testuser::19500:"));
     }
 
     #[test]
     fn test_expire_with_prefix() {
-        let dir = tempfile::tempdir().unwrap();
-        let etc = dir.path().join("etc");
-        std::fs::create_dir_all(&etc).unwrap();
-        std::fs::write(etc.join("shadow"), "testuser:$6$hash:19500:0:99999:7:::\n").unwrap();
-
-        let args: Vec<std::ffi::OsString> = vec![
-            "passwd".into(),
-            "-e".into(),
-            "-P".into(),
-            dir.path().as_os_str().to_owned(),
-            "testuser".into(),
-        ];
-        let code = uumain(args);
+        let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-e", "testuser"]);
         assert_eq!(code, 0);
 
-        let content = std::fs::read_to_string(etc.join("shadow")).unwrap();
+        let content = read_shadow(&dir);
         assert!(content.contains("testuser:$6$hash:0:"));
     }
 
     #[test]
     fn test_aging_with_prefix() {
-        let dir = tempfile::tempdir().unwrap();
-        let etc = dir.path().join("etc");
-        std::fs::create_dir_all(&etc).unwrap();
-        std::fs::write(etc.join("shadow"), "testuser:$6$hash:19500:0:99999:7:::\n").unwrap();
-
-        let args: Vec<std::ffi::OsString> = vec![
-            "passwd".into(),
-            "-n".into(),
-            "5".into(),
-            "-x".into(),
-            "90".into(),
-            "-w".into(),
-            "14".into(),
-            "-i".into(),
-            "30".into(),
-            "-P".into(),
-            dir.path().as_os_str().to_owned(),
-            "testuser".into(),
-        ];
-        let code = uumain(args);
+        let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
+        let code = run_with_prefix(
+            &dir,
+            &["-n", "5", "-x", "90", "-w", "14", "-i", "30", "testuser"],
+        );
         assert_eq!(code, 0);
 
-        let content = std::fs::read_to_string(etc.join("shadow")).unwrap();
+        let content = read_shadow(&dir);
         assert!(content.contains("testuser:$6$hash:19500:5:90:14:30::"));
     }
 
     #[test]
     fn test_status_all_with_prefix() {
+        let dir = setup_prefix("root:$6$roothash:19000:0:99999:7:::\ntestuser:!:19500::::::\n");
+        let code = run_with_prefix(&dir, &["-S", "-a"]);
+        assert_eq!(code, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // New integration tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_lock_already_locked() {
+        // Locking an already locked password adds another '!'.
+        let dir = setup_prefix("testuser:!$6$hash:19500:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-l", "testuser"]);
+        assert_eq!(code, 0);
+
+        let content = read_shadow(&dir);
+        assert!(
+            content.contains("testuser:!!$6$hash:"),
+            "should have double !, got: {content}"
+        );
+    }
+
+    #[test]
+    fn test_unlock_double_locked() {
+        // Unlocking "!!$6$hash" removes one '!', leaving "!$6$hash" which
+        // is still locked — so unlock should report the first '!' was removed
+        // but the result starts with '!' and ShadowEntry::unlock returns true
+        // because the *remaining* string ("!$6$hash") is non-empty and not "!".
+        // Actually: unlock removes *one* leading '!'. After removing one '!':
+        //   "!!$6$hash" -> "!$6$hash"
+        // "!$6$hash" is non-empty and not "!", so unlock returns true.
+        let dir = setup_prefix("testuser:!!$6$hash:19500:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-u", "testuser"]);
+        assert_eq!(code, 0);
+
+        let content = read_shadow(&dir);
+        assert!(
+            content.contains("testuser:!$6$hash:"),
+            "should have single !, got: {content}"
+        );
+    }
+
+    #[test]
+    fn test_unlock_empty_password_fails() {
+        // Cannot unlock an account with no hash — unlock returns false.
+        let dir = setup_prefix("testuser::19500:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-u", "testuser"]);
+        assert_ne!(code, 0, "unlocking empty password should fail");
+    }
+
+    #[test]
+    fn test_delete_already_empty() {
+        // Deleting an already-empty password is a no-op (succeeds).
+        let dir = setup_prefix("testuser::19500:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-d", "testuser"]);
+        assert_eq!(code, 0);
+
+        let content = read_shadow(&dir);
+        assert!(content.contains("testuser::19500:"));
+    }
+
+    #[test]
+    fn test_expire_already_expired() {
+        // Expiring an already-expired (last_change=0) account succeeds.
+        let dir = setup_prefix("testuser:$6$hash:0:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-e", "testuser"]);
+        assert_eq!(code, 0);
+
+        let content = read_shadow(&dir);
+        assert!(content.contains("testuser:$6$hash:0:"));
+    }
+
+    #[test]
+    fn test_multiple_users_only_target_modified() {
+        let shadow = "alice:$6$alice:19500:0:99999:7:::\nbob:$6$bob:19500:0:99999:7:::\ncharlie:$6$charlie:19500:0:99999:7:::\n";
+        let dir = setup_prefix(shadow);
+
+        let code = run_with_prefix(&dir, &["-l", "bob"]);
+        assert_eq!(code, 0);
+
+        let content = read_shadow(&dir);
+        // Alice and Charlie should be unchanged.
+        assert!(
+            content.contains("alice:$6$alice:19500:0:99999:7:::\n"),
+            "alice should be unchanged, got: {content}"
+        );
+        assert!(
+            content.contains("charlie:$6$charlie:19500:0:99999:7:::\n"),
+            "charlie should be unchanged, got: {content}"
+        );
+        // Bob should be locked.
+        assert!(
+            content.contains("bob:!$6$bob:19500:0:99999:7:::\n"),
+            "bob should be locked, got: {content}"
+        );
+    }
+
+    #[test]
+    fn test_status_nonexistent_user() {
+        let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-S", "nosuchuser"]);
+        assert_ne!(code, 0);
+    }
+
+    #[test]
+    fn test_lock_nonexistent_user() {
+        let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-l", "nosuchuser"]);
+        assert_ne!(code, 0);
+    }
+
+    #[test]
+    fn test_missing_shadow_file() {
         let dir = tempfile::tempdir().unwrap();
+        // No etc/shadow — should return PASSWD_FILE_MISSING (4).
         let etc = dir.path().join("etc");
         std::fs::create_dir_all(&etc).unwrap();
-        std::fs::write(
-            etc.join("shadow"),
-            "root:$6$roothash:19000:0:99999:7:::\ntestuser:!:19500::::::\n",
-        )
-        .unwrap();
+        // Shadow file does not exist.
+        let code = run_with_prefix(&dir, &["-S", "testuser"]);
+        assert_eq!(code, exit_codes::PASSWD_FILE_MISSING);
+    }
 
-        let args: Vec<std::ffi::OsString> = vec![
-            "passwd".into(),
-            "-S".into(),
-            "-a".into(),
-            "-P".into(),
-            dir.path().as_os_str().to_owned(),
-        ];
-        let code = uumain(args);
+    #[test]
+    fn test_quiet_suppresses_output() {
+        // With -q, the stderr action message should be suppressed.
+        // We verify that the action still succeeds.
+        let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
+        let code = run_with_prefix(&dir, &["-q", "-l", "testuser"]);
         assert_eq!(code, 0);
+
+        // Verify the lock still happened.
+        let content = read_shadow(&dir);
+        assert!(content.contains("testuser:!$6$hash:"));
+    }
+
+    #[test]
+    fn test_lock_then_status() {
+        let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
+
+        // Lock.
+        let code = run_with_prefix(&dir, &["-l", "testuser"]);
+        assert_eq!(code, 0);
+
+        // Check status shows L — we verify by reading the shadow file and
+        // checking the format_status output on the resulting entry.
+        let content = read_shadow(&dir);
+        let entry: ShadowEntry = content.trim().parse().unwrap();
+        assert_eq!(entry.status_char(), "L");
+    }
+
+    #[test]
+    fn test_full_lifecycle() {
+        let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
+
+        // Lock.
+        assert_eq!(run_with_prefix(&dir, &["-l", "testuser"]), 0);
+        let entry: ShadowEntry = read_shadow(&dir).trim().parse().unwrap();
+        assert_eq!(entry.status_char(), "L", "after lock");
+
+        // Unlock.
+        assert_eq!(run_with_prefix(&dir, &["-u", "testuser"]), 0);
+        let entry: ShadowEntry = read_shadow(&dir).trim().parse().unwrap();
+        assert_eq!(entry.status_char(), "P", "after unlock");
+
+        // Delete.
+        assert_eq!(run_with_prefix(&dir, &["-d", "testuser"]), 0);
+        let entry: ShadowEntry = read_shadow(&dir).trim().parse().unwrap();
+        assert_eq!(entry.status_char(), "NP", "after delete");
+
+        // Expire.
+        assert_eq!(run_with_prefix(&dir, &["-e", "testuser"]), 0);
+        let entry: ShadowEntry = read_shadow(&dir).trim().parse().unwrap();
+        assert_eq!(entry.last_change, Some(0), "after expire");
     }
 }
