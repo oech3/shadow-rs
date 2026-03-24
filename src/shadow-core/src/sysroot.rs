@@ -84,6 +84,12 @@ impl SysRoot {
     pub fn skel_path(&self) -> PathBuf {
         self.resolve("/etc/skel")
     }
+
+    /// Path to `/etc/shells`.
+    #[must_use]
+    pub fn shells_path(&self) -> PathBuf {
+        self.resolve("/etc/shells")
+    }
 }
 
 impl Default for SysRoot {

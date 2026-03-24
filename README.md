@@ -54,13 +54,13 @@ default-in-Ubuntu in under 3 years. shadow-rs follows that playbook.
 | `usermod` | **Implemented.** Modify all properties, group membership, lock/unlock. |
 | `chpasswd` | **Implemented.** Batch password change from stdin. |
 | `chage` | **Implemented.** Password aging management, `-l` list mode. |
-| `groupadd` | Planned (Phase 3) |
-| `groupdel` | Planned (Phase 3) |
-| `groupmod` | Planned (Phase 3) |
-| `grpck` | Planned (Phase 3) |
-| `chfn` | Planned (Phase 3) |
-| `chsh` | Planned (Phase 3) |
-| `newgrp` | Planned (Phase 3) |
+| `groupadd` | **Implemented.** Auto GID allocation, system groups, force mode. |
+| `groupdel` | **Implemented.** Primary group usage check. |
+| `groupmod` | **Implemented.** GID change, rename, password. |
+| `grpck` | **Implemented.** Group/gshadow integrity verification. |
+| `chfn` | **Implemented.** GECOS sub-field modification. |
+| `chsh` | **Implemented.** Shell change with /etc/shells validation. |
+| `newgrp` | **Implemented.** Effective group change with crypt verification. |
 
 ## Building
 
