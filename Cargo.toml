@@ -19,6 +19,13 @@ members = [
     "src/uu/useradd",
     "src/uu/userdel",
     "src/uu/usermod",
+    "src/uu/groupadd",
+    "src/uu/groupdel",
+    "src/uu/groupmod",
+    "src/uu/grpck",
+    "src/uu/chfn",
+    "src/uu/chsh",
+    "src/uu/newgrp",
     "src/uu/chpasswd",
     "src/uu/chage",
 ]
@@ -63,9 +70,17 @@ userdel = { optional = true, version = "0.0.1", package = "uu_userdel", path = "
 usermod = { optional = true, version = "0.0.1", package = "uu_usermod", path = "src/uu/usermod" }
 chpasswd = { optional = true, version = "0.0.1", package = "uu_chpasswd", path = "src/uu/chpasswd" }
 chage = { optional = true, version = "0.0.1", package = "uu_chage", path = "src/uu/chage" }
+groupadd = { optional = true, version = "0.0.1", package = "uu_groupadd", path = "src/uu/groupadd" }
+groupdel = { optional = true, version = "0.0.1", package = "uu_groupdel", path = "src/uu/groupdel" }
+groupmod = { optional = true, version = "0.0.1", package = "uu_groupmod", path = "src/uu/groupmod" }
+grpck = { optional = true, version = "0.0.1", package = "uu_grpck", path = "src/uu/grpck" }
+chfn = { optional = true, version = "0.0.1", package = "uu_chfn", path = "src/uu/chfn" }
+chsh = { optional = true, version = "0.0.1", package = "uu_chsh", path = "src/uu/chsh" }
+newgrp = { optional = true, version = "0.0.1", package = "uu_newgrp", path = "src/uu/newgrp" }
 
 [features]
-default = ["passwd", "pwck", "useradd", "userdel", "usermod", "chpasswd", "chage"]
+default = ["passwd", "pwck", "useradd", "userdel", "usermod", "chpasswd", "chage",
+           "groupadd", "groupdel", "groupmod", "grpck", "chfn", "chsh", "newgrp"]
 
 # Individual tools
 feat_passwd = ["passwd"]
@@ -75,10 +90,18 @@ feat_userdel = ["userdel"]
 feat_usermod = ["usermod"]
 feat_chpasswd = ["chpasswd"]
 feat_chage = ["chage"]
+feat_groupadd = ["groupadd"]
+feat_groupdel = ["groupdel"]
+feat_groupmod = ["groupmod"]
+feat_grpck = ["grpck"]
+feat_chfn = ["chfn"]
+feat_chsh = ["chsh"]
+feat_newgrp = ["newgrp"]
 
 # Grouped features
 feat_phase1 = ["feat_passwd", "feat_pwck"]
 feat_phase2 = ["feat_useradd", "feat_userdel", "feat_usermod", "feat_chpasswd", "feat_chage"]
+feat_phase3 = ["feat_groupadd", "feat_groupdel", "feat_groupmod", "feat_grpck", "feat_chfn", "feat_chsh", "feat_newgrp"]
 feat_common = ["feat_phase1", "feat_phase2"]
 
 [[bin]]
@@ -97,9 +120,24 @@ path = "tests/by-util/test_chpasswd.rs"
 name = "test_passwd"
 path = "tests/by-util/test_passwd.rs"
 
+[[test]]
+name = "test_chfn"
+path = "tests/by-util/test_chfn.rs"
+
+[[test]]
+name = "test_chsh"
+path = "tests/by-util/test_chsh.rs"
+
+[[test]]
+name = "test_newgrp"
+path = "tests/by-util/test_newgrp.rs"
+
 [dev-dependencies]
 chage = { version = "0.0.1", package = "uu_chage", path = "src/uu/chage" }
+chfn = { version = "0.0.1", package = "uu_chfn", path = "src/uu/chfn" }
 chpasswd = { version = "0.0.1", package = "uu_chpasswd", path = "src/uu/chpasswd" }
+chsh = { version = "0.0.1", package = "uu_chsh", path = "src/uu/chsh" }
+newgrp = { version = "0.0.1", package = "uu_newgrp", path = "src/uu/newgrp" }
 shadow-core = { path = "src/shadow-core", features = ["shadow"] }
 nix = { workspace = true }
 tempfile = { workspace = true }

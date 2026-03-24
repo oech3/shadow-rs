@@ -8,6 +8,11 @@
 //! Dispatches to the appropriate utility based on `argv[0]`.
 //! When invoked as `shadow-rs <util>`, uses the first argument instead.
 
+// newgrp uses crypt(3) from libcrypt — ensure the linker includes it.
+#[cfg(feature = "newgrp")]
+#[link(name = "crypt")]
+extern "C" {}
+
 use std::path::Path;
 
 fn main() {
@@ -54,12 +59,32 @@ fn dispatch(name: &str, args: &[std::ffi::OsString]) -> Option<i32> {
     match name {
         #[cfg(feature = "chage")]
         "chage" => Some(chage::uumain(args.iter().cloned())),
+        #[cfg(feature = "chfn")]
+        "chfn" => Some(chfn::uumain(args.iter().cloned())),
         #[cfg(feature = "chpasswd")]
         "chpasswd" => Some(chpasswd::uumain(args.iter().cloned())),
+        #[cfg(feature = "chsh")]
+        "chsh" => Some(chsh::uumain(args.iter().cloned())),
+        #[cfg(feature = "groupadd")]
+        "groupadd" => Some(groupadd::uumain(args.iter().cloned())),
+        #[cfg(feature = "groupdel")]
+        "groupdel" => Some(groupdel::uumain(args.iter().cloned())),
+        #[cfg(feature = "groupmod")]
+        "groupmod" => Some(groupmod::uumain(args.iter().cloned())),
+        #[cfg(feature = "grpck")]
+        "grpck" => Some(grpck::uumain(args.iter().cloned())),
+        #[cfg(feature = "newgrp")]
+        "newgrp" => Some(newgrp::uumain(args.iter().cloned())),
         #[cfg(feature = "passwd")]
         "passwd" => Some(passwd::uumain(args.iter().cloned())),
         #[cfg(feature = "pwck")]
         "pwck" => Some(pwck::uumain(args.iter().cloned())),
+        #[cfg(feature = "useradd")]
+        "useradd" => Some(useradd::uumain(args.iter().cloned())),
+        #[cfg(feature = "userdel")]
+        "userdel" => Some(userdel::uumain(args.iter().cloned())),
+        #[cfg(feature = "usermod")]
+        "usermod" => Some(usermod::uumain(args.iter().cloned())),
         _ => None,
     }
 }
@@ -69,10 +94,30 @@ fn print_available_utils() {
 
     #[cfg(feature = "chage")]
     println!("  chage");
+    #[cfg(feature = "chfn")]
+    println!("  chfn");
     #[cfg(feature = "chpasswd")]
     println!("  chpasswd");
+    #[cfg(feature = "chsh")]
+    println!("  chsh");
+    #[cfg(feature = "groupadd")]
+    println!("  groupadd");
+    #[cfg(feature = "groupdel")]
+    println!("  groupdel");
+    #[cfg(feature = "groupmod")]
+    println!("  groupmod");
+    #[cfg(feature = "grpck")]
+    println!("  grpck");
+    #[cfg(feature = "newgrp")]
+    println!("  newgrp");
     #[cfg(feature = "passwd")]
     println!("  passwd");
     #[cfg(feature = "pwck")]
     println!("  pwck");
+    #[cfg(feature = "useradd")]
+    println!("  useradd");
+    #[cfg(feature = "userdel")]
+    println!("  userdel");
+    #[cfg(feature = "usermod")]
+    println!("  usermod");
 }
