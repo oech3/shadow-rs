@@ -48,7 +48,7 @@ default-in-Ubuntu in under 3 years. shadow-rs follows that playbook.
 | Tool | Status |
 |------|--------|
 | `passwd` | **All 17 flags implemented.** Drop-in for GNU passwd. PAM password change, `--root`, `--quiet`, `--stdin`. Output bit-for-bit identical with GNU. |
-| `pwck` | Planned (Phase 1) |
+| `pwck` | **All checks implemented.** Drop-in for GNU pwck. Bit-for-bit identical output. |
 | `useradd` | Planned (Phase 2) |
 | `userdel` | Planned (Phase 2) |
 | `usermod` | Planned (Phase 2) |

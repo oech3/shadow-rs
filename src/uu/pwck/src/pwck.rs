@@ -11,6 +11,8 @@
 use std::collections::HashSet;
 use std::fmt;
 use std::io::BufRead;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use clap::{Arg, ArgAction, Command};
@@ -66,9 +68,9 @@ enum PwckError {
     /// Exit 4 -- cannot lock files.
     CantLock(String),
     /// Exit 5 -- cannot update files.
-    #[allow(dead_code)]
     CantUpdate(String),
-    /// Exit 6 -- cannot sort files.
+    /// Exit 6 -- cannot sort files (sort logic errors only).
+    #[allow(dead_code)]
     CantSort(String),
 }
 
@@ -105,6 +107,7 @@ impl UError for PwckError {
 struct PwckOptions {
     quiet: bool,
     sort: bool,
+    read_only: bool,
     root: SysRoot,
     passwd_path: PathBuf,
     shadow_path: PathBuf,
@@ -124,6 +127,7 @@ impl PwckOptions {
         Self {
             quiet: matches.get_flag(options::QUIET),
             sort: matches.get_flag(options::SORT),
+            read_only: matches.get_flag(options::READ_ONLY),
             root,
             passwd_path,
             shadow_path,
@@ -164,6 +168,12 @@ fn run_checks(opts: &PwckOptions) -> UResult<()> {
     }
 
     let shadow_entries = load_shadow_file(&opts.shadow_path)?;
+
+    // Check shadow file permissions (should be 0600 or 0640).
+    if !opts.quiet {
+        check_shadow_permissions(&opts.shadow_path);
+    }
+
     let group_entries = load_group_file(&opts.root.group_path(), opts.quiet);
 
     let shells_path = opts.root.resolve("/etc/shells");
@@ -188,6 +198,7 @@ fn run_checks(opts: &PwckOptions) -> UResult<()> {
             &opts.shadow_path,
             &passwd_entries,
             &shadow_entries,
+            opts.read_only,
         )?;
     } else {
         eprintln!("pwck: no changes");
@@ -228,11 +239,15 @@ fn load_group_file(path: &Path, quiet: bool) -> Vec<GroupEntry> {
 }
 
 /// Sort passwd entries by UID and write back atomically (for `--sort`).
+///
+/// When `read_only` is true (i.e. `-r -s`), compute the sorted order but
+/// skip all file writes, matching GNU `pwck -r -s` behaviour.
 fn sort_and_write(
     passwd_path: &Path,
     shadow_path: &Path,
     passwd_entries: &[PasswdEntry],
     shadow_entries: &[ShadowEntry],
+    read_only: bool,
 ) -> UResult<()> {
     let mut sorted_passwd = passwd_entries.to_vec();
     sorted_passwd.sort_by_key(|e| e.uid);
@@ -241,11 +256,16 @@ fn sort_and_write(
         return Ok(());
     }
 
+    if read_only {
+        return Ok(());
+    }
+
     let passwd_lock = FileLock::acquire(passwd_path)
         .map_err(|e| PwckError::CantLock(format!("cannot lock {}: {e}", passwd_path.display())))?;
 
-    atomic::atomic_write(passwd_path, |f| passwd::write_passwd(&sorted_passwd, f))
-        .map_err(|e| PwckError::CantSort(format!("cannot sort {}: {e}", passwd_path.display())))?;
+    atomic::atomic_write(passwd_path, |f| passwd::write_passwd(&sorted_passwd, f)).map_err(
+        |e| PwckError::CantUpdate(format!("cannot update {}: {e}", passwd_path.display())),
+    )?;
 
     if shadow_path.exists() && !shadow_entries.is_empty() {
         let shadow_lock = FileLock::acquire(shadow_path).map_err(|e| {
@@ -255,7 +275,7 @@ fn sort_and_write(
         let sorted_shadow = sort_shadow_by_passwd(&sorted_passwd, shadow_entries);
 
         atomic::atomic_write(shadow_path, |f| shadow::write_shadow(&sorted_shadow, f)).map_err(
-            |e| PwckError::CantSort(format!("cannot sort {}: {e}", shadow_path.display())),
+            |e| PwckError::CantUpdate(format!("cannot update {}: {e}", shadow_path.display())),
         )?;
 
         drop(shadow_lock);
@@ -364,6 +384,29 @@ fn check_passwd_entries(
         if !group_entries.is_empty() && !group_gids.contains(&entry.gid) {
             uucore::show_error!("user '{}': no group {}", entry.name, entry.gid);
             errors += 1;
+        }
+
+        // Check 4b: UID/GID range validation (advisory warning only).
+        if !quiet {
+            const MAX_SYSTEM_ID: u32 = 60_000;
+            if entry.uid > MAX_SYSTEM_ID {
+                uucore::show_warning!(
+                    "user '{}': UID {} is outside the normal range (> {})",
+                    entry.name,
+                    entry.uid,
+                    MAX_SYSTEM_ID
+                );
+                warnings += 1;
+            }
+            if entry.gid > MAX_SYSTEM_ID {
+                uucore::show_warning!(
+                    "user '{}': GID {} is outside the normal range (> {})",
+                    entry.name,
+                    entry.gid,
+                    MAX_SYSTEM_ID
+                );
+                warnings += 1;
+            }
         }
 
         // Check 5: Home directory exists.
@@ -478,6 +521,30 @@ fn check_shadow_entries(
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Warn if `/etc/shadow` has overly permissive file permissions.
+///
+/// The shadow file should be mode 0600 (root-only) or 0640 (root + shadow group).
+/// Any other mode is a security concern.
+#[cfg(unix)]
+fn check_shadow_permissions(path: &Path) {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return;
+    };
+    let mode = meta.permissions().mode() & 0o7777;
+    if mode != 0o600 && mode != 0o640 {
+        uucore::show_warning!(
+            "{}: bad permissions (0{:o}), should be 0600 or 0640",
+            path.display(),
+            mode
+        );
+    }
+}
+
+#[cfg(not(unix))]
+fn check_shadow_permissions(_path: &Path) {
+    // File permission checks are only meaningful on Unix.
+}
+
 /// Current date as days since the Unix epoch.
 fn today_as_days() -> i64 {
     let now = std::time::SystemTime::now();
@@ -540,31 +607,39 @@ fn read_valid_shells(path: &Path) -> HashSet<PathBuf> {
 /// Sort shadow entries to match the order of sorted passwd entries.
 ///
 /// Shadow entries without a matching passwd entry are appended at the end.
+/// Uses a position map instead of a `HashMap` to preserve duplicate shadow
+/// entries (a `HashMap` would silently drop all but one entry per username).
 fn sort_shadow_by_passwd(
     sorted_passwd: &[PasswdEntry],
     shadow_entries: &[ShadowEntry],
 ) -> Vec<ShadowEntry> {
-    let shadow_map: std::collections::HashMap<&str, &ShadowEntry> = shadow_entries
+    // Build a position lookup: username -> index in sorted passwd list.
+    let position: std::collections::HashMap<&str, usize> = sorted_passwd
         .iter()
-        .map(|s| (s.name.as_str(), s))
+        .enumerate()
+        .map(|(i, pe)| (pe.name.as_str(), i))
         .collect();
 
-    let mut result: Vec<ShadowEntry> = Vec::with_capacity(shadow_entries.len());
-    let mut used: HashSet<&str> = HashSet::new();
+    let mut indexed: Vec<(usize, &ShadowEntry)> = Vec::with_capacity(shadow_entries.len());
+    let mut orphans: Vec<&ShadowEntry> = Vec::new();
 
-    // Add shadow entries in passwd UID order.
-    for pe in sorted_passwd {
-        if let Some(se) = shadow_map.get(pe.name.as_str()) {
-            result.push((*se).clone());
-            used.insert(pe.name.as_str());
+    for se in shadow_entries {
+        if let Some(&pos) = position.get(se.name.as_str()) {
+            indexed.push((pos, se));
+        } else {
+            orphans.push(se);
         }
     }
 
-    // Append orphan shadow entries at the end.
-    for se in shadow_entries {
-        if !used.contains(se.name.as_str()) {
-            result.push(se.clone());
-        }
+    // Stable sort keeps duplicates in their original relative order.
+    indexed.sort_by_key(|(pos, _)| *pos);
+
+    let mut result: Vec<ShadowEntry> = Vec::with_capacity(shadow_entries.len());
+    for (_, se) in indexed {
+        result.push(se.clone());
+    }
+    for se in orphans {
+        result.push(se.clone());
     }
 
     result
@@ -933,6 +1008,26 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].name, "root");
         assert_eq!(result[1].name, "orphan");
+    }
+
+    #[test]
+    fn test_sort_shadow_preserves_duplicates() {
+        let sorted_passwd = vec![
+            make_passwd("root", 0, 0, "/root", "/bin/bash"),
+            make_passwd("alice", 1000, 1000, "/home/alice", "/bin/bash"),
+        ];
+        // Duplicate shadow entries for alice must both be preserved.
+        let shadow = vec![
+            make_shadow("alice"),
+            make_shadow("root"),
+            make_shadow("alice"),
+        ];
+
+        let result = sort_shadow_by_passwd(&sorted_passwd, &shadow);
+        assert_eq!(result.len(), 3, "duplicates must not be dropped");
+        assert_eq!(result[0].name, "root");
+        assert_eq!(result[1].name, "alice");
+        assert_eq!(result[2].name, "alice");
     }
 
     // -----------------------------------------------------------------------
