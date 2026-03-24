@@ -413,9 +413,11 @@ mod tests {
 
     #[test]
     fn test_lock_unlock_conflict() {
-        assert!(uu_app()
-            .try_get_matches_from(["usermod", "-L", "-U", "u"])
-            .is_err());
+        assert!(
+            uu_app()
+                .try_get_matches_from(["usermod", "-L", "-U", "u"])
+                .is_err()
+        );
     }
 
     #[test]

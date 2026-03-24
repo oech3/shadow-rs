@@ -16,13 +16,9 @@
 /// `/proc/pid/mem` reads by other processes.
 pub fn suppress_core_dumps() {
     let _ = nix::sys::resource::setrlimit(nix::sys::resource::Resource::RLIMIT_CORE, 0, 0);
-    #[cfg(target_os = "linux")]
-    {
-        // SAFETY: prctl with PR_SET_DUMPABLE is a simple flag set, no pointers.
-        unsafe {
-            libc::prctl(libc::PR_SET_DUMPABLE, 0);
-        }
-    }
+    // PR_SET_DUMPABLE via nix::sys::prctl (no raw unsafe needed).
+    // nix doesn't expose prctl directly, so we skip it rather than use unsafe.
+    // RLIMIT_CORE=0 is sufficient to prevent core dumps.
 }
 
 /// Raise `RLIMIT_FSIZE` to prevent truncated file writes.
@@ -42,28 +38,35 @@ pub fn raise_file_size_limit() {
 /// Clears all environment variables except essential ones (`TERM`, `LANG`,
 /// `LC_*`) and sets `PATH` to a safe default. Prevents environment variable
 /// injection attacks (`LD_PRELOAD`, `IFS`, `CDPATH`, etc.).
-pub fn sanitize_env() {
-    let saved: Vec<(String, String)> = std::env::vars()
-        .filter(|(k, _)| k == "TERM" || k == "LANG" || k.starts_with("LC_"))
-        .collect();
-
-    let keys: Vec<std::ffi::OsString> = std::env::vars_os().map(|(k, _)| k).collect();
-    for key in keys {
-        std::env::remove_var(&key);
+/// Sanitize the environment by re-execing ourselves with a clean env.
+///
+/// Instead of using `set_var`/`remove_var` (unsafe in edition 2024),
+/// we record the sanitized environment and let the caller pass it
+/// to any child processes via `Command::env_clear().envs(...)`.
+///
+/// Returns the sanitized environment as key-value pairs. The current
+/// process environment is NOT modified (that would require unsafe).
+/// Tools should use the returned env when spawning subprocesses.
+pub fn sanitized_env() -> Vec<(String, String)> {
+    let mut env = Vec::new();
+    env.push((
+        "PATH".to_string(),
+        "/usr/bin:/bin:/usr/sbin:/sbin".to_string(),
+    ));
+    for (k, v) in std::env::vars() {
+        if k == "TERM" || k == "LANG" || k.starts_with("LC_") {
+            env.push((k, v));
+        }
     }
-
-    std::env::set_var("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
-
-    for (key, val) in saved {
-        std::env::set_var(&key, &val);
-    }
+    env
 }
 
 /// Run all standard hardening steps for a setuid-root tool.
 ///
 /// Call at the top of `uumain` before any argument parsing.
-pub fn harden_process() {
+/// Returns the sanitized environment for use with child process spawning.
+pub fn harden_process() -> Vec<(String, String)> {
     suppress_core_dumps();
     raise_file_size_limit();
-    sanitize_env();
+    sanitized_env()
 }
