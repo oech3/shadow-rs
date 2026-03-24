@@ -18,11 +18,20 @@ use std::process::Command;
 ///
 /// Silently succeeds if `nscd`/`sssd` is not installed or not running —
 /// this matches GNU shadow-utils behavior.
+///
+/// Subprocesses are spawned with a sanitized environment to prevent the
+/// caller's full (potentially tainted) env from leaking into child processes
+/// running in a setuid context.
 pub fn invalidate_cache(database: &str) {
+    // Minimal, known-safe environment for child processes.
+    let clean_env = [("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")];
+
     // Use absolute paths to avoid PATH-based lookups in setuid context.
     let _ = Command::new("/usr/sbin/nscd")
         .arg("-i")
         .arg(database)
+        .env_clear()
+        .envs(clean_env)
         .status();
 
     // sssd: sss_cache with the appropriate flag
@@ -31,5 +40,9 @@ pub fn invalidate_cache(database: &str) {
         "group" => "-G",
         _ => return,
     };
-    let _ = Command::new("/usr/sbin/sss_cache").arg(flag).status();
+    let _ = Command::new("/usr/sbin/sss_cache")
+        .arg(flag)
+        .env_clear()
+        .envs(clean_env)
+        .status();
 }
