@@ -231,15 +231,49 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
     let is_encrypted = matches.get_flag(options::ENCRYPTED);
     let use_md5 = matches.get_flag(options::MD5);
     let crypt_method = matches.get_one::<String>(options::CRYPT_METHOD);
-    let sha_rounds = matches.get_one::<i64>(options::SHA_ROUNDS);
+
+    // Reject -m unconditionally — MD5 is insecure.
+    if use_md5 {
+        return Err(ChpasswdError::UnexpectedFailure(
+            "MD5 is insecure and not supported; use -c SHA512 instead".into(),
+        )
+        .into());
+    }
+
+    // Validate --sha-rounds range.
+    let sha_rounds = match matches.get_one::<i64>(options::SHA_ROUNDS).copied() {
+        Some(r @ 1..=i64::MAX) => match u32::try_from(r) {
+            Ok(v) => Some(v),
+            Err(_) => {
+                return Err(ChpasswdError::UnexpectedFailure(format!(
+                    "invalid value for --sha-rounds '{r}': must be between 1 and {}",
+                    u32::MAX
+                ))
+                .into());
+            }
+        },
+        Some(r) => {
+            return Err(ChpasswdError::UnexpectedFailure(format!(
+                "invalid value for --sha-rounds '{r}': must be between 1 and {}",
+                u32::MAX
+            ))
+            .into());
+        }
+        None => None,
+    };
 
     // Determine the hashing method for plaintext mode.
     let hash_config = if is_encrypted {
         None
     } else {
-        let method = resolve_crypt_method(crypt_method.map(String::as_str), use_md5)?;
-        let rounds = sha_rounds.and_then(|&r| u32::try_from(r).ok());
-        Some((method, rounds))
+        let method = resolve_crypt_method(crypt_method.map(String::as_str))?;
+        if sha_rounds.is_some() && method == shadow_core::crypt::CryptMethod::Yescrypt {
+            return Err(ChpasswdError::UnexpectedFailure(
+                "--sha-rounds is not supported with YESCRYPT".into(),
+            )
+            .into());
+        }
+        Some((method, sha_rounds))
     };
 
     // Read all pairs from stdin before acquiring locks.
@@ -395,16 +429,15 @@ fn apply_password_changes(
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Map `-c` / `-m` flags to a `CryptMethod`.
+/// Map `-c` flag to a `CryptMethod`.
 fn resolve_crypt_method(
     method: Option<&str>,
-    use_md5: bool,
 ) -> Result<shadow_core::crypt::CryptMethod, ChpasswdError> {
     use shadow_core::crypt::CryptMethod;
 
     match method {
         Some("SHA256") => Ok(CryptMethod::Sha256),
-        Some("SHA512") => Ok(CryptMethod::Sha512),
+        Some("SHA512") | None => Ok(CryptMethod::Sha512),
         Some("YESCRYPT") => Ok(CryptMethod::Yescrypt),
         Some("MD5" | "DES") => Err(ChpasswdError::UnexpectedFailure(
             "MD5 and DES are insecure and not supported for plaintext hashing".into(),
@@ -412,10 +445,6 @@ fn resolve_crypt_method(
         Some(other) => Err(ChpasswdError::UnexpectedFailure(format!(
             "unknown crypt method: {other}"
         ))),
-        None if use_md5 => Err(ChpasswdError::UnexpectedFailure(
-            "MD5 is insecure and not supported; use -c SHA512 instead".into(),
-        )),
-        None => Ok(CryptMethod::Sha512),
     }
 }
 

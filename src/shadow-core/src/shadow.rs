@@ -114,7 +114,7 @@ impl ShadowEntry {
 pub fn days_since_epoch() -> Result<i64, ShadowError> {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| ShadowError::Parse("system clock is before Unix epoch".into()))?;
+        .map_err(|_| ShadowError::Other("system clock is before Unix epoch".into()))?;
     let secs = i64::try_from(secs.as_secs()).unwrap_or(i64::MAX);
     Ok(secs / 86400)
 }
