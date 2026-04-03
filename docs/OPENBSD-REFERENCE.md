@@ -11,7 +11,7 @@ Source: `cvsweb.openbsd.org/src/usr.bin/passwd/` and `src/lib/libutil/passwd.c`.
 |---|---------|--------|
 | Signal blocking during file writes | #38 — `SignalBlocker` RAII |
 | Privilege drop during PAM conversation | #39 — `PrivDrop` RAII |
-| Environment sanitization | #40 — `sanitize_env()` |
+| Environment sanitization | #40 — `sanitized_env()` / `harden_process()` |
 | Landlock filesystem restriction | #41 — `apply_landlock()` in passwd |
 | Absolute paths for subprocesses | #20 — `/usr/sbin/nscd` |
 | Password zeroing | #7 — `zeroize` crate |
@@ -21,8 +21,8 @@ Source: `cvsweb.openbsd.org/src/usr.bin/passwd/` and `src/lib/libutil/passwd.c`.
 | Resource limit hardening | #44 — `raise_file_size_limit()` in hardening.rs |
 | Zero-length output guard | #45 — in `atomic_write` |
 | setuid(0) consolidation | #47 — before file operations in passwd |
-| User enumeration prevention | #49 — constant-time PAM in passwd |
-| SIGINT handler during password input | #48 — "Password unchanged" + terminal restore |
+| User enumeration prevention | #49 — early permission check in passwd |
+| Password input interrupt handling | #48 — custom SIGINT handler removed; signal blocking covers critical sections |
 | Umask reset | #51 — `UmaskGuard` RAII in lock/tmp creation |
 
 ### Not Yet Implemented

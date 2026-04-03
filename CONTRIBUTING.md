@@ -92,7 +92,7 @@ Utilities must be embeddable. Return `UResult<()>` from `uumain`. The
 ### `unsafe`
 
 Denied at the workspace level (`unsafe_code = "deny"`). Only two FFI boundary
-modules are exempted: `shadow-core::pam` (PAM C library) and `shadow-core::crypt`
+modules are exempted: `shadow_core::pam` (PAM C library) and `shadow_core::crypt`
 (POSIX crypt(3)). Every `unsafe` block must have a `// SAFETY:` comment.
 
 ### `str`, `OsStr` & `Path`
