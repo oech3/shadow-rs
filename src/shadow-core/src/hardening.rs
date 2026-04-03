@@ -57,6 +57,49 @@ pub fn sanitized_env() -> Vec<(String, String)> {
     env
 }
 
+/// Restrict filesystem access via Landlock (Linux 5.13+).
+///
+/// Best-effort: silently does nothing on kernels without Landlock support.
+/// `rw_paths` get read+write access, `ro_paths` get read-only access,
+/// `exec_paths` get execute access. Everything else is denied.
+#[cfg(feature = "landlock")]
+pub fn apply_landlock(
+    writable: &[&std::path::Path],
+    readable: &[&std::path::Path],
+    exec_paths: &[&std::path::Path],
+) {
+    use landlock::{
+        ABI, Access, AccessFs, Ruleset, RulesetAttr, RulesetCreatedAttr, path_beneath_rules,
+    };
+
+    let abi = ABI::V5;
+    let all_access = AccessFs::from_all(abi);
+    let read_access = AccessFs::from_read(abi);
+    let exec_access = AccessFs::Execute | AccessFs::ReadFile | AccessFs::ReadDir;
+
+    let result = Ruleset::default()
+        .handle_access(all_access)
+        .and_then(Ruleset::create)
+        .and_then(|rs| rs.add_rules(path_beneath_rules(writable, all_access)))
+        .and_then(|rs| rs.add_rules(path_beneath_rules(readable, read_access)))
+        .and_then(|rs| rs.add_rules(path_beneath_rules(exec_paths, exec_access)))
+        .and_then(landlock::RulesetCreated::restrict_self);
+
+    // Best-effort: log but don't fail
+    if let Err(e) = result {
+        eprintln!("landlock: {e}");
+    }
+}
+
+/// No-op on non-Linux or when the `landlock` feature is disabled.
+#[cfg(not(feature = "landlock"))]
+pub fn apply_landlock(
+    _writable: &[&std::path::Path],
+    _readable: &[&std::path::Path],
+    _exec_paths: &[&std::path::Path],
+) {
+}
+
 /// Run all standard hardening steps for a setuid-root tool.
 ///
 /// Call at the top of `uumain` before any argument parsing.
