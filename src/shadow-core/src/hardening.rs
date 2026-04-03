@@ -62,7 +62,7 @@ pub fn sanitized_env() -> Vec<(String, String)> {
 /// Best-effort: silently does nothing on kernels without Landlock support.
 /// `rw_paths` get read+write access, `ro_paths` get read-only access,
 /// `exec_paths` get execute access. Everything else is denied.
-#[cfg(feature = "landlock")]
+#[cfg(all(feature = "landlock", target_os = "linux"))]
 pub fn apply_landlock(
     writable: &[&std::path::Path],
     readable: &[&std::path::Path],
@@ -72,6 +72,9 @@ pub fn apply_landlock(
         ABI, Access, AccessFs, Ruleset, RulesetAttr, RulesetCreatedAttr, path_beneath_rules,
     };
 
+    // V5 is the maximum ABI we request; Ruleset's default CompatLevel
+    // (BestEffort) automatically downgrades to whatever the running
+    // kernel actually supports, so this is safe on older kernels.
     let abi = ABI::V5;
     let all_access = AccessFs::from_all(abi);
     let read_access = AccessFs::from_read(abi);
@@ -85,14 +88,12 @@ pub fn apply_landlock(
         .and_then(|rs| rs.add_rules(path_beneath_rules(exec_paths, exec_access)))
         .and_then(landlock::RulesetCreated::restrict_self);
 
-    // Best-effort: log but don't fail
-    if let Err(e) = result {
-        eprintln!("landlock: {e}");
-    }
+    // Best-effort: silently ignore errors (unsupported kernel, etc.)
+    let _ = result;
 }
 
 /// No-op on non-Linux or when the `landlock` feature is disabled.
-#[cfg(not(feature = "landlock"))]
+#[cfg(not(all(feature = "landlock", target_os = "linux")))]
 pub fn apply_landlock(
     _writable: &[&std::path::Path],
     _readable: &[&std::path::Path],

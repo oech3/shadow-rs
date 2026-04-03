@@ -117,7 +117,8 @@ impl UError for PasswdError {
 
 /// Restrict filesystem access using landlock (Linux 5.13+).
 ///
-/// Best-effort Landlock sandboxing for passwd.
+/// Best-effort Landlock sandboxing for passwd. Silently does nothing on
+/// kernels without Landlock support or when the feature is disabled.
 ///
 /// Restricts filesystem access to only what passwd needs:
 /// read+write `/etc/` (passwd/shadow files) and `/dev/` (tty for prompts),
