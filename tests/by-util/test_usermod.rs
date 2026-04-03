@@ -6,16 +6,14 @@
 
 //! Integration tests for the `usermod` utility.
 //!
-//! Tests that require root are guarded by `skip_unless_root()` and run inside
+//! Tests that require root are guarded by `common::skip_unless_root()` and run inside
 //! Docker CI containers. Non-root tests exercise clap parsing and error paths
 //! that do not need privilege.
 
 use std::ffi::OsString;
 
-/// Skip the test when not running as root (euid != 0).
-fn skip_unless_root() -> bool {
-    !nix::unistd::geteuid().is_root()
-}
+#[path = "../common/mod.rs"]
+mod common;
 
 /// Run `uumain` with the given args, returning the exit code.
 fn run(args: &[&str]) -> i32 {
@@ -99,7 +97,7 @@ fn test_lock_unlock_conflict() {
 
 #[test]
 fn test_change_shell() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -126,7 +124,7 @@ fn test_change_shell() {
 
 #[test]
 fn test_change_comment() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -148,7 +146,7 @@ fn test_change_comment() {
 
 #[test]
 fn test_change_home() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -170,7 +168,7 @@ fn test_change_home() {
 
 #[test]
 fn test_change_uid() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -192,7 +190,7 @@ fn test_change_uid() {
 
 #[test]
 fn test_add_to_groups() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -218,7 +216,7 @@ fn test_add_to_groups() {
 
 #[test]
 fn test_lock_user() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -240,7 +238,7 @@ fn test_lock_user() {
 
 #[test]
 fn test_unlock_user() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -262,7 +260,7 @@ fn test_unlock_user() {
 
 #[test]
 fn test_nonexistent_user_fails() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -278,7 +276,7 @@ fn test_nonexistent_user_fails() {
 
 #[test]
 fn test_multiple_modifications_combined() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -319,7 +317,7 @@ fn test_multiple_modifications_combined() {
 
 #[test]
 fn test_other_users_unchanged() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -353,7 +351,7 @@ fn test_other_users_unchanged() {
 
 #[test]
 fn test_uid_collision_fails() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -372,7 +370,7 @@ fn test_uid_collision_fails() {
 
 #[test]
 fn test_set_password() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -400,7 +398,7 @@ fn test_set_password() {
 
 #[test]
 fn test_set_password_long_flag() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -423,7 +421,7 @@ fn test_set_password_long_flag() {
 
 #[test]
 fn test_set_password_preserves_other_fields() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 

@@ -6,16 +6,14 @@
 
 //! Integration tests for the `chpasswd` utility.
 //!
-//! Tests that require root are guarded by `skip_unless_root()` and run inside
+//! Tests that require root are guarded by `common::skip_unless_root()` and run inside
 //! Docker CI containers. Non-root tests exercise clap parsing and error paths
 //! that do not need privilege.
 
 use std::ffi::OsString;
 
-/// Skip the test when not running as root (euid != 0).
-fn skip_unless_root() -> bool {
-    !nix::unistd::geteuid().is_root()
-}
+#[path = "../common/mod.rs"]
+mod common;
 
 /// Run `uumain` with the given args, returning the exit code.
 fn run(args: &[&str]) -> i32 {
@@ -60,7 +58,7 @@ fn test_invalid_crypt_method_exits_error() {
 
 #[test]
 fn test_batch_password_update() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -96,7 +94,7 @@ fn test_batch_password_update() {
 
 #[test]
 fn test_preserves_other_fields() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -125,7 +123,7 @@ fn test_preserves_other_fields() {
 
 #[test]
 fn test_multiple_users_atomic() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 

@@ -6,16 +6,14 @@
 
 //! Integration tests for the `userdel` utility.
 //!
-//! Tests that require root are guarded by `skip_unless_root()` and run inside
+//! Tests that require root are guarded by `common::skip_unless_root()` and run inside
 //! Docker CI containers. Non-root tests exercise clap parsing and error paths
 //! that do not need privilege.
 
 use std::ffi::OsString;
 
-/// Skip the test when not running as root (uid != 0).
-fn skip_unless_root() -> bool {
-    !nix::unistd::getuid().is_root()
-}
+#[path = "../common/mod.rs"]
+mod common;
 
 /// Run `uumain` with the given args, returning the exit code.
 fn run(args: &[&str]) -> i32 {
@@ -114,7 +112,7 @@ fn test_missing_login_exits_error() {
 
 #[test]
 fn test_delete_user_basic() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -137,7 +135,7 @@ fn test_delete_user_basic() {
 
 #[test]
 fn test_delete_user_remove_home() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -179,7 +177,7 @@ otheruser:x:1001:1001:Other User:/home/otheruser:/bin/bash\n"
 
 #[test]
 fn test_delete_nonexistent_user_fails() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -190,7 +188,7 @@ fn test_delete_nonexistent_user_fails() {
 
 #[test]
 fn test_delete_user_preserves_others() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -225,7 +223,7 @@ fn test_delete_user_preserves_others() {
 
 #[test]
 fn test_delete_user_removes_group_membership() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -249,7 +247,7 @@ fn test_delete_user_removes_group_membership() {
 
 #[test]
 fn test_delete_user_shadow_entry_removed() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -270,7 +268,7 @@ fn test_delete_user_shadow_entry_removed() {
 
 #[test]
 fn test_delete_user_force_flag_accepted() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -288,7 +286,7 @@ fn test_delete_user_force_flag_accepted() {
 
 #[test]
 fn test_delete_multiple_users_sequentially() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
