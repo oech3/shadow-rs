@@ -10,10 +10,8 @@
 
 use std::ffi::OsString;
 
-/// Skip the test when not running as root (euid != 0).
-fn skip_unless_root() -> bool {
-    !nix::unistd::geteuid().is_root()
-}
+#[path = "../common/mod.rs"]
+mod common;
 
 /// Run `uumain` with the given args, returning the exit code.
 fn run(args: &[&str]) -> i32 {
@@ -50,7 +48,7 @@ fn test_no_shell_flag_exits_error() {
 
 #[test]
 fn test_list_shells() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     // -l should list shells and exit 0 (assuming /etc/shells exists on the system)
@@ -61,7 +59,7 @@ fn test_list_shells() {
 
 #[test]
 fn test_invalid_shell_path() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     // Relative path should be rejected

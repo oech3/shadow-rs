@@ -6,16 +6,14 @@
 
 //! Integration tests for the `pwck` utility.
 //!
-//! Tests that require root are guarded by `skip_unless_root()` and run inside
+//! Tests that require root are guarded by `common::skip_unless_root()` and run inside
 //! Docker CI containers. Non-root tests exercise clap parsing and error paths
 //! that do not need privilege.
 
 use std::ffi::OsString;
 
-/// Skip the test when not running as root (euid != 0).
-fn skip_unless_root() -> bool {
-    !nix::unistd::geteuid().is_root()
-}
+#[path = "../common/mod.rs"]
+mod common;
 
 /// Run `uumain` with the given args, returning the exit code.
 fn run(args: &[&str]) -> i32 {
@@ -72,7 +70,7 @@ fn test_read_only_mode() {
 
 #[test]
 fn test_valid_files_exits_zero() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -100,7 +98,7 @@ fn test_valid_files_exits_zero() {
 
 #[test]
 fn test_missing_shadow_entry() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -132,7 +130,7 @@ fn test_missing_shadow_entry() {
 
 #[test]
 fn test_extra_shadow_entry() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -163,7 +161,7 @@ fn test_extra_shadow_entry() {
 
 #[test]
 fn test_invalid_uid() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -193,7 +191,7 @@ fn test_invalid_uid() {
 
 #[test]
 fn test_invalid_gid() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -223,7 +221,7 @@ fn test_invalid_gid() {
 
 #[test]
 fn test_duplicate_username() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -251,7 +249,7 @@ fn test_duplicate_username() {
 
 #[test]
 fn test_duplicate_uid() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -287,7 +285,7 @@ fn test_duplicate_uid() {
 
 #[test]
 fn test_empty_username() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -317,7 +315,7 @@ fn test_empty_username() {
 
 #[test]
 fn test_missing_home_dir() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -347,7 +345,7 @@ fn test_missing_home_dir() {
 
 #[test]
 fn test_malformed_passwd_line() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 

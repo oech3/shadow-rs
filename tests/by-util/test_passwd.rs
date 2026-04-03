@@ -6,16 +6,14 @@
 
 //! Integration tests for the `passwd` utility.
 //!
-//! Tests that require root are guarded by `skip_unless_root()` and run inside
+//! Tests that require root are guarded by `common::skip_unless_root()` and run inside
 //! Docker CI containers. Non-root tests exercise clap parsing and error paths
 //! that do not need privilege.
 
 use std::ffi::OsString;
 
-/// Skip the test when not running as root (euid != 0).
-fn skip_unless_root() -> bool {
-    !nix::unistd::geteuid().is_root()
-}
+#[path = "../common/mod.rs"]
+mod common;
 
 /// Run `uumain` with the given args, returning the exit code.
 fn run(args: &[&str]) -> i32 {
@@ -74,7 +72,7 @@ fn test_conflicting_flags_exits_two() {
 
 #[test]
 fn test_status_output_format() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     // Verify the status line matches the expected GNU format:
@@ -86,7 +84,7 @@ fn test_status_output_format() {
 
 #[test]
 fn test_lock_unlock_cycle() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
@@ -126,7 +124,7 @@ fn test_lock_unlock_cycle() {
 
 #[test]
 fn test_expire_sets_epoch() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
@@ -143,7 +141,7 @@ fn test_expire_sets_epoch() {
 
 #[test]
 fn test_aging_all_fields() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
@@ -162,7 +160,7 @@ fn test_aging_all_fields() {
 
 #[test]
 fn test_nonexistent_user_fails() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
@@ -174,7 +172,7 @@ fn test_nonexistent_user_fails() {
 
 #[test]
 fn test_missing_shadow_fails() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     let dir = tempfile::tempdir().expect("failed to create temp dir");
@@ -187,7 +185,7 @@ fn test_missing_shadow_fails() {
 
 #[test]
 fn test_quiet_no_action_message() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     // -q suppresses the informational action message on stderr.
@@ -205,7 +203,7 @@ fn test_quiet_no_action_message() {
 
 #[test]
 fn test_lock_and_aging_combined() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     // Mutation flag + aging flags must all apply in a single operation.
@@ -227,7 +225,7 @@ fn test_lock_and_aging_combined() {
 
 #[test]
 fn test_multiple_users_only_target_modified() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     let shadow = "\
@@ -256,7 +254,7 @@ charlie:$6$charlie:19500:0:99999:7:::\n";
 
 #[test]
 fn test_delete_password() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
@@ -272,7 +270,7 @@ fn test_delete_password() {
 
 #[test]
 fn test_unlock_only_bang_fails() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     // Password "!" cannot be unlocked (would leave empty).
@@ -283,7 +281,7 @@ fn test_unlock_only_bang_fails() {
 
 #[test]
 fn test_full_lifecycle() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     let dir = setup_prefix("testuser:$6$hash:19500:0:99999:7:::\n");
@@ -329,7 +327,7 @@ fn test_full_lifecycle() {
 /// After both complete, the shadow file should still be valid and parseable.
 #[test]
 fn test_concurrent_lock_operations() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -393,7 +391,7 @@ fn test_concurrent_lock_operations() {
 /// verifies the output format is identical.
 #[test]
 fn test_gnu_compat_status_output() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -443,7 +441,7 @@ fn test_gnu_compat_status_output() {
 /// Compare lock/unlock cycle results with GNU passwd.
 #[test]
 fn test_gnu_compat_lock_unlock() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 

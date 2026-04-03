@@ -6,16 +6,14 @@
 
 //! Integration tests for the `groupadd` utility.
 //!
-//! Tests that require root are guarded by `skip_unless_root()` and run inside
+//! Tests that require root are guarded by `common::skip_unless_root()` and run inside
 //! Docker CI containers. Non-root tests exercise clap parsing and error paths
 //! that do not need privilege.
 
 use std::ffi::OsString;
 
-/// Skip the test when not running as root (euid != 0).
-fn skip_unless_root() -> bool {
-    !nix::unistd::geteuid().is_root()
-}
+#[path = "../common/mod.rs"]
+mod common;
 
 /// Run `uumain` with the given args, returning the exit code.
 fn run(args: &[&str]) -> i32 {
@@ -77,7 +75,7 @@ fn test_missing_group_name_exits_error() {
 
 #[test]
 fn test_create_group_basic() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -101,7 +99,7 @@ fn test_create_group_basic() {
 
 #[test]
 fn test_create_group_with_gid() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -119,7 +117,7 @@ fn test_create_group_with_gid() {
 
 #[test]
 fn test_create_group_system() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -149,7 +147,7 @@ fn test_create_group_system() {
 
 #[test]
 fn test_create_group_non_unique() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -168,7 +166,7 @@ fn test_create_group_non_unique() {
 
 #[test]
 fn test_duplicate_group_fails() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -183,7 +181,7 @@ fn test_duplicate_group_fails() {
 
 #[test]
 fn test_duplicate_gid_fails() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -196,7 +194,7 @@ fn test_duplicate_gid_fails() {
 
 #[test]
 fn test_force_on_existing_succeeds() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -209,7 +207,7 @@ fn test_force_on_existing_succeeds() {
 
 #[test]
 fn test_other_entries_preserved() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 

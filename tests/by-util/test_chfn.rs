@@ -11,10 +11,8 @@
 
 use std::ffi::OsString;
 
-/// Skip the test when not running as root (euid != 0).
-fn skip_unless_root() -> bool {
-    !nix::unistd::geteuid().is_root()
-}
+#[path = "../common/mod.rs"]
+mod common;
 
 /// Run `uumain` with the given args, returning the exit code.
 fn run(args: &[&str]) -> i32 {
@@ -59,7 +57,7 @@ fn test_unknown_flag_exits_one() {
 
 #[test]
 fn test_change_full_name() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     let dir = setup_prefix("testuser:x:1000:1000:Old Name,,,:/home/testuser:/bin/bash\n");
@@ -82,7 +80,7 @@ fn test_change_full_name() {
 
 #[test]
 fn test_no_flags_exits_error() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
     // No flags specified — should error

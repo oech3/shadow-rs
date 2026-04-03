@@ -6,16 +6,14 @@
 
 //! Integration tests for the `grpck` utility.
 //!
-//! Tests that require root are guarded by `skip_unless_root()` and run inside
+//! Tests that require root are guarded by `common::skip_unless_root()` and run inside
 //! Docker CI containers. Non-root tests exercise clap parsing and error paths
 //! that do not need privilege.
 
 use std::ffi::OsString;
 
-/// Skip the test when not running as root (euid != 0).
-fn skip_unless_root() -> bool {
-    !nix::unistd::geteuid().is_root()
-}
+#[path = "../common/mod.rs"]
+mod common;
 
 /// Run `uumain` with the given args, returning the exit code.
 fn run(args: &[&str]) -> i32 {
@@ -68,7 +66,7 @@ fn test_read_only_mode() {
 
 #[test]
 fn test_valid_files_exits_zero() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -80,7 +78,7 @@ fn test_valid_files_exits_zero() {
 
 #[test]
 fn test_missing_gshadow_entry() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -99,7 +97,7 @@ fn test_missing_gshadow_entry() {
 
 #[test]
 fn test_extra_gshadow_entry() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -118,7 +116,7 @@ fn test_extra_gshadow_entry() {
 
 #[test]
 fn test_invalid_gid() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -137,7 +135,7 @@ fn test_invalid_gid() {
 
 #[test]
 fn test_duplicate_group_name() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -149,7 +147,7 @@ fn test_duplicate_group_name() {
 
 #[test]
 fn test_empty_group_name() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -168,7 +166,7 @@ fn test_empty_group_name() {
 
 #[test]
 fn test_malformed_group_line() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
@@ -193,7 +191,7 @@ fn test_nonexistent_group_exits_cant_open() {
 
 #[test]
 fn test_valid_group_without_gshadow_file() {
-    if skip_unless_root() {
+    if common::skip_unless_root() {
         return;
     }
 
