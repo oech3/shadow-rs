@@ -4,6 +4,8 @@
 # shadow-rs
 
 [![License](http://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/shadow-utils-rs/shadow-rs/blob/main/LICENSE)
+[![CI](https://github.com/shadow-utils-rs/shadow-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/shadow-utils-rs/shadow-rs/actions/workflows/ci.yml)
+[![MSRV](https://img.shields.io/badge/MSRV-1.94.0-blue)](https://github.com/shadow-utils-rs/shadow-rs)
 
 </div>
 

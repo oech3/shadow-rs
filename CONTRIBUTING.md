@@ -7,7 +7,7 @@ everything you need to know.
 
 Before you start, also check:
 
-- [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) (when created)
+- [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
 - [SECURITY.md](./SECURITY.md) for vulnerability reporting
 
 > [!WARNING]
