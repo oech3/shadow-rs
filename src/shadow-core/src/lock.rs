@@ -297,6 +297,8 @@ mod tests {
 
     #[test]
     fn test_lock_file_has_cloexec() {
+        use std::os::unix::io::AsFd;
+
         // Rust's stdlib sets O_CLOEXEC by default on Linux.
         // Verify the lock file FD won't leak to child processes.
         let dir = tempfile::tempdir().expect("tempdir creation failed");
@@ -306,11 +308,11 @@ mod tests {
         let lock = FileLock::acquire(&file).expect("failed to acquire lock");
 
         let f = fs::File::open(&lock.lock_path).expect("failed to open lock file");
-        // Uses nix for this test since rustix lacks fcntl_getfd. The nix
-        // dependency remains in shadow-core for hardening.rs and pam.rs.
-        let flags =
-            nix::fcntl::fcntl(&f, nix::fcntl::FcntlArg::F_GETFD).expect("fcntl F_GETFD failed");
-        assert!(flags & libc::FD_CLOEXEC != 0, "FD should have CLOEXEC set");
+        let flags = rustix::io::fcntl_getfd(f.as_fd()).expect("fcntl F_GETFD failed");
+        assert!(
+            flags.contains(rustix::io::FdFlags::CLOEXEC),
+            "FD should have CLOEXEC set"
+        );
 
         lock.release().expect("failed to release lock");
     }

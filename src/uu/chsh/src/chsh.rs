@@ -175,7 +175,7 @@ where
     F: FnOnce(&mut PasswdEntry) -> Result<(), String>,
 {
     if rustix::process::geteuid().is_root() {
-        let _ = nix::unistd::setuid(nix::unistd::Uid::from_raw(0));
+        let _ = shadow_core::process::setuid(0);
     }
 
     let _signals = shadow_core::hardening::SignalBlocker::block_critical()

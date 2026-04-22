@@ -305,7 +305,7 @@ fn apply_password_changes(
 ) -> UResult<()> {
     // Consolidate real + effective UID to root for file operations.
     if rustix::process::geteuid().is_root() {
-        let _ = nix::unistd::setuid(nix::unistd::Uid::from_raw(0));
+        let _ = shadow_core::process::setuid(0);
     }
 
     // Block signals for the entire critical section.
